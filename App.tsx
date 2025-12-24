@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from 'react';
 import { VoiceName, HistoryItem } from './types';
 import { VOICE_OPTIONS, SAMPLE_RATE } from './constants';
@@ -17,9 +16,26 @@ export default function App() {
   const currentSourceRef = useRef<AudioBufferSourceNode | null>(null);
 
   useEffect(() => {
-    // Simple check for API Key presence
-    setApiReady(!!process.env.API_KEY && process.env.API_KEY !== 'undefined');
+    const checkApiKey = async () => {
+      try {
+        const hasKey = await (window as any).aistudio.hasSelectedApiKey();
+        setApiReady(hasKey || !!process.env.API_KEY);
+      } catch (e) {
+        setApiReady(!!process.env.API_KEY);
+      }
+    };
+    checkApiKey();
   }, []);
+
+  const handleOpenKeySelector = async () => {
+    try {
+      await (window as any).aistudio.openSelectKey();
+      setApiReady(true);
+      setError(null);
+    } catch (e) {
+      console.error("Key selection failed", e);
+    }
+  };
 
   const getAudioContext = () => {
     if (!audioContextRef.current) {
@@ -73,7 +89,7 @@ export default function App() {
 
   const handleGenerate = async () => {
     if (!text.trim()) {
-      setError("Script editor is empty. Please provide content to synthesize.");
+      setError("Please enter text to synthesize.");
       return;
     }
 
@@ -90,7 +106,7 @@ export default function App() {
       
       const newItem: HistoryItem = {
         id: Date.now().toString(),
-        text: text.length > 80 ? text.substring(0, 77) + '...' : text,
+        text: text.length > 60 ? text.substring(0, 57) + '...' : text,
         voice: selectedVoice,
         timestamp: Date.now(),
         audioData: base64Audio,
@@ -99,7 +115,10 @@ export default function App() {
       setHistory(prev => [newItem, ...prev].slice(0, 10));
       await playAudio(base64Audio);
     } catch (err: any) {
-      setError(err.message || "Generation failed.");
+      setError(err.message || "Synthesis failed.");
+      if (err.message?.includes('Requested entity') || err.message?.includes('API Key')) {
+        setApiReady(false);
+      }
     } finally {
       setIsGenerating(false);
     }
@@ -107,59 +126,59 @@ export default function App() {
 
   return (
     <div className="min-h-screen flex flex-col items-center p-4 md:p-8 bg-[#0a0f1d] text-slate-100">
-      <header className="w-full max-w-4xl mb-12 text-center animate-in fade-in slide-in-from-top-4 duration-700">
+      <header className="w-full max-w-4xl mb-12 text-center pt-8">
         <h1 className="text-4xl md:text-5xl font-bold mb-2 tracking-tighter bg-clip-text text-transparent bg-gradient-to-r from-blue-400 via-indigo-400 to-purple-500">
           MRIVG
         </h1>
         <div className="flex justify-center items-center gap-2">
-           <span className="text-slate-400 text-lg font-light tracking-widest uppercase text-[10px]">
+           <span className="text-slate-400 font-light tracking-widest uppercase text-[10px]">
             Neural Voice Intelligence
           </span>
           <span className="w-1 h-1 rounded-full bg-slate-700" />
           <span className="text-[9px] text-slate-500 font-bold uppercase tracking-widest">
-            v2.5 Release
+            v2.5
           </span>
         </div>
       </header>
 
       <main className="w-full max-w-6xl grid grid-cols-1 lg:grid-cols-4 gap-8">
         <section className="lg:col-span-3 space-y-6">
-          <div className="bg-slate-800/40 border border-slate-700/60 rounded-3xl p-6 md:p-8 shadow-2xl backdrop-blur-md">
+          <div className="bg-slate-800/40 border border-slate-700/60 rounded-3xl p-6 md:p-8 shadow-2xl backdrop-blur-md relative overflow-hidden">
             <div className="flex justify-between items-center mb-4">
               <label className="text-xs font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
-                <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
-                Script Editor
+                <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+                Script Canvas
               </label>
               <button 
                 onClick={() => { setText(''); setError(null); }} 
                 className="text-[10px] text-slate-500 hover:text-red-400 transition-colors uppercase font-bold"
               >
-                Reset Canvas
+                Clear
               </button>
             </div>
             
             <textarea
               className="w-full h-80 bg-slate-900/60 border border-slate-700/50 rounded-2xl p-6 text-slate-100 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500/50 transition-all resize-none outline-none leading-relaxed text-lg placeholder:text-slate-700"
-              placeholder="Paste or type your script here..."
+              placeholder="Enter text here to convert into voice..."
               value={text}
               onChange={(e) => { setText(e.target.value); if(error) setError(null); }}
-              maxLength={10000}
+              maxLength={1500}
             />
             
             <div className="flex flex-col sm:flex-row justify-between items-center mt-6 gap-4">
               <div className="flex flex-col gap-1 w-full sm:w-1/2">
-                <div className={`text-[10px] font-mono ${text.length > 9500 ? 'text-orange-400' : 'text-slate-500'}`}>
-                  {text.length.toLocaleString()} / 10,000 CHARACTERS
+                <div className={`text-[10px] font-mono ${text.length > 1400 ? 'text-orange-400 font-bold' : 'text-slate-500'}`}>
+                  {text.length.toLocaleString()} / 1,500 LIMIT
                 </div>
                 {error && (
-                  <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-2 mt-2">
+                  <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-3 mt-2">
                     <div className="text-red-400 text-[10px] font-bold uppercase tracking-tight flex items-center gap-2">
                       <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
                         <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
                       </svg>
-                      Service Alert
+                      Synthesis Alert
                     </div>
-                    <div className="text-red-300/80 text-[11px] mt-0.5 leading-tight">{error}</div>
+                    <div className="text-red-300/80 text-[11px] mt-1 leading-normal font-medium">{error}</div>
                   </div>
                 )}
               </div>
@@ -180,8 +199,8 @@ export default function App() {
                   disabled={isGenerating || !text.trim()}
                   className={`flex-1 sm:flex-none px-8 py-4 rounded-xl font-bold transition-all flex items-center justify-center gap-3 uppercase text-xs shadow-lg ${
                     isGenerating || !text.trim()
-                      ? 'bg-slate-700 text-slate-500 cursor-not-allowed border border-slate-600'
-                      : 'bg-blue-600 hover:bg-blue-500 text-white active:scale-95 border border-blue-400/30'
+                      ? 'bg-slate-700 text-slate-500 cursor-not-allowed'
+                      : 'bg-blue-600 hover:bg-blue-500 text-white active:scale-95'
                   }`}
                 >
                   {isGenerating ? (
@@ -195,7 +214,7 @@ export default function App() {
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                       </svg>
-                      Generate Speech
+                      Generate
                     </>
                   )}
                 </button>
@@ -204,12 +223,12 @@ export default function App() {
           </div>
 
           {history.length > 0 && (
-            <div className="space-y-4 pt-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <div className="space-y-4 pt-4">
               <h3 className="text-xs font-bold text-slate-500 uppercase tracking-[0.2em] px-2 flex items-center gap-2">
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
-                Recently Generated
+                History
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {history.map((item) => (
@@ -238,12 +257,12 @@ export default function App() {
         </section>
 
         <aside className="space-y-6">
-          <div className="bg-slate-800/40 border border-slate-700/60 rounded-3xl p-6 shadow-2xl backdrop-blur-md sticky top-8 animate-in fade-in slide-in-from-right-4 duration-700">
+          <div className="bg-slate-800/40 border border-slate-700/60 rounded-3xl p-6 shadow-2xl backdrop-blur-md sticky top-8">
             <h3 className="text-xs font-bold text-slate-400 uppercase tracking-[0.2em] mb-6 flex items-center gap-2">
               <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
               </svg>
-              Voice Selection
+              Neural Voices
             </h3>
             
             <div className="space-y-3">
@@ -269,10 +288,9 @@ export default function App() {
                     <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded uppercase tracking-tighter ${
                       voice.gender === 'Female' ? 'bg-pink-500/10 text-pink-400' : 'bg-blue-500/10 text-blue-400'
                     }`}>
-                      {voice.gender}
+                      {voice.gender[0]}
                     </span>
                   </div>
-                  
                   {selectedVoice === voice.id && (
                     <div className="absolute top-0 right-0 h-full w-1 bg-indigo-500" />
                   )}
@@ -282,22 +300,31 @@ export default function App() {
 
             <div className="mt-8 pt-6 border-t border-slate-700/50 space-y-4">
               <div className="bg-slate-900/40 rounded-xl p-4">
-                <div className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-3">System Health</div>
+                <div className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-3">Health Status</div>
                 <div className="space-y-2">
                   <div className="flex justify-between items-center text-[10px]">
                     <span className="text-slate-500 uppercase">API Context</span>
-                    <span className={`font-bold tracking-tighter flex items-center gap-1 ${apiReady ? 'text-emerald-400' : 'text-orange-400'}`}>
-                      <div className={`w-1 h-1 rounded-full ${apiReady ? 'bg-emerald-400' : 'bg-orange-400'}`} />
-                      {apiReady ? 'CONNECTED' : 'KEY MISSING'}
-                    </span>
+                    <button 
+                      onClick={handleOpenKeySelector}
+                      className={`font-bold tracking-tighter flex items-center gap-1 hover:opacity-80 transition-opacity ${apiReady ? 'text-emerald-400' : 'text-orange-400 animate-pulse'}`}
+                    >
+                      <div className={`w-1.5 h-1.5 rounded-full ${apiReady ? 'bg-emerald-400' : 'bg-orange-400'}`} />
+                      {apiReady ? 'READY' : 'SELECT KEY'}
+                    </button>
                   </div>
                   <div className="flex justify-between items-center text-[10px]">
-                    <span className="text-slate-500 uppercase">Latency</span>
-                    <span className="text-emerald-400 font-bold tracking-tighter">OPTIMAL</span>
+                    <span className="text-slate-500 uppercase">Billing Info</span>
+                    <a 
+                      href="https://ai.google.dev/gemini-api/docs/billing" 
+                      target="_blank" 
+                      className="text-blue-400 hover:underline font-bold tracking-tighter"
+                    >
+                      DOCS
+                    </a>
                   </div>
                   <div className="flex justify-between items-center text-[10px]">
                     <span className="text-slate-500 uppercase">Sample Rate</span>
-                    <span className="text-slate-300">24KHZ</span>
+                    <span className="text-slate-300 font-bold">24KHZ</span>
                   </div>
                 </div>
               </div>
@@ -306,9 +333,9 @@ export default function App() {
         </aside>
       </main>
 
-      <footer className="mt-20 pb-8 text-center opacity-50">
+      <footer className="mt-20 pb-8 text-center opacity-20">
         <div className="text-[10px] font-bold text-slate-600 uppercase tracking-[0.4em]">
-          &copy; {new Date().getFullYear()} MRIVG &bull; Production Optimized for Vercel
+          MRIVG PRODUCTION ENGINE &bull; {new Date().getFullYear()}
         </div>
       </footer>
     </div>
