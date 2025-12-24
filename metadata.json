@@ -1,0 +1,7 @@
+{
+  "name": "MRIVG",
+  "description": "A professional-grade Text-to-Speech application powered by Gemini 2.5 Flash TTS, featuring high-fidelity neural voices and real-time audio generation.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
