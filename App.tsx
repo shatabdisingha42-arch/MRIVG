@@ -1,5 +1,5 @@
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { VoiceName, HistoryItem } from './types';
 import { VOICE_OPTIONS, SAMPLE_RATE } from './constants';
 import { ttsService, decode, decodeAudioData } from './services/geminiService';
@@ -11,9 +11,15 @@ export default function App() {
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [apiReady, setApiReady] = useState<boolean | null>(null);
 
   const audioContextRef = useRef<AudioContext | null>(null);
   const currentSourceRef = useRef<AudioBufferSourceNode | null>(null);
+
+  useEffect(() => {
+    // Simple check for API Key presence
+    setApiReady(!!process.env.API_KEY && process.env.API_KEY !== 'undefined');
+  }, []);
 
   const getAudioContext = () => {
     if (!audioContextRef.current) {
@@ -60,14 +66,14 @@ export default function App() {
       setIsPlaying(true);
     } catch (err) {
       console.error("Playback error:", err);
-      setError("Failed to play audio.");
+      setError("Playback failed. Please ensure your volume is up.");
       setIsPlaying(false);
     }
   };
 
   const handleGenerate = async () => {
     if (!text.trim()) {
-      setError("Please enter some text.");
+      setError("Script editor is empty. Please provide content to synthesize.");
       return;
     }
 
@@ -93,36 +99,42 @@ export default function App() {
       setHistory(prev => [newItem, ...prev].slice(0, 10));
       await playAudio(base64Audio);
     } catch (err: any) {
-      setError(err.message || "An error occurred.");
+      setError(err.message || "Generation failed.");
     } finally {
       setIsGenerating(false);
     }
   };
 
   return (
-    <div className="min-h-screen flex flex-col items-center p-4 md:p-8 bg-[#0a0f1d]">
-      <header className="w-full max-w-4xl mb-12 text-center">
+    <div className="min-h-screen flex flex-col items-center p-4 md:p-8 bg-[#0a0f1d] text-slate-100">
+      <header className="w-full max-w-4xl mb-12 text-center animate-in fade-in slide-in-from-top-4 duration-700">
         <h1 className="text-4xl md:text-5xl font-bold mb-2 tracking-tighter bg-clip-text text-transparent bg-gradient-to-r from-blue-400 via-indigo-400 to-purple-500">
           MRIVG
         </h1>
-        <p className="text-slate-400 text-lg font-light tracking-widest uppercase text-xs">
-          Neural Voice Intelligence
-        </p>
+        <div className="flex justify-center items-center gap-2">
+           <span className="text-slate-400 text-lg font-light tracking-widest uppercase text-[10px]">
+            Neural Voice Intelligence
+          </span>
+          <span className="w-1 h-1 rounded-full bg-slate-700" />
+          <span className="text-[9px] text-slate-500 font-bold uppercase tracking-widest">
+            v2.5 Release
+          </span>
+        </div>
       </header>
 
       <main className="w-full max-w-6xl grid grid-cols-1 lg:grid-cols-4 gap-8">
-        {/* Editor Section */}
         <section className="lg:col-span-3 space-y-6">
           <div className="bg-slate-800/40 border border-slate-700/60 rounded-3xl p-6 md:p-8 shadow-2xl backdrop-blur-md">
             <div className="flex justify-between items-center mb-4">
-              <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">
+              <label className="text-xs font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
                 Script Editor
               </label>
               <button 
-                onClick={() => setText('')} 
+                onClick={() => { setText(''); setError(null); }} 
                 className="text-[10px] text-slate-500 hover:text-red-400 transition-colors uppercase font-bold"
               >
-                Clear All
+                Reset Canvas
               </button>
             </div>
             
@@ -130,16 +142,26 @@ export default function App() {
               className="w-full h-80 bg-slate-900/60 border border-slate-700/50 rounded-2xl p-6 text-slate-100 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500/50 transition-all resize-none outline-none leading-relaxed text-lg placeholder:text-slate-700"
               placeholder="Paste or type your script here..."
               value={text}
-              onChange={(e) => setText(e.target.value)}
+              onChange={(e) => { setText(e.target.value); if(error) setError(null); }}
               maxLength={10000}
             />
             
             <div className="flex flex-col sm:flex-row justify-between items-center mt-6 gap-4">
-              <div className="flex flex-col gap-1">
+              <div className="flex flex-col gap-1 w-full sm:w-1/2">
                 <div className={`text-[10px] font-mono ${text.length > 9500 ? 'text-orange-400' : 'text-slate-500'}`}>
                   {text.length.toLocaleString()} / 10,000 CHARACTERS
                 </div>
-                {error && <div className="text-red-400 text-xs font-bold uppercase tracking-tight">Error: {error}</div>}
+                {error && (
+                  <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-2 mt-2">
+                    <div className="text-red-400 text-[10px] font-bold uppercase tracking-tight flex items-center gap-2">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                      </svg>
+                      Service Alert
+                    </div>
+                    <div className="text-red-300/80 text-[11px] mt-0.5 leading-tight">{error}</div>
+                  </div>
+                )}
               </div>
 
               <div className="flex gap-3 w-full sm:w-auto">
@@ -181,10 +203,14 @@ export default function App() {
             </div>
           </div>
 
-          {/* History Section */}
           {history.length > 0 && (
-            <div className="space-y-4 pt-4">
-              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-[0.2em] px-2">Recently Generated</h3>
+            <div className="space-y-4 pt-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
+              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-[0.2em] px-2 flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                Recently Generated
+              </h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {history.map((item) => (
                   <button
@@ -211,9 +237,8 @@ export default function App() {
           )}
         </section>
 
-        {/* Sidebar Settings */}
         <aside className="space-y-6">
-          <div className="bg-slate-800/40 border border-slate-700/60 rounded-3xl p-6 shadow-2xl backdrop-blur-md sticky top-8">
+          <div className="bg-slate-800/40 border border-slate-700/60 rounded-3xl p-6 shadow-2xl backdrop-blur-md sticky top-8 animate-in fade-in slide-in-from-right-4 duration-700">
             <h3 className="text-xs font-bold text-slate-400 uppercase tracking-[0.2em] mb-6 flex items-center gap-2">
               <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
@@ -257,19 +282,22 @@ export default function App() {
 
             <div className="mt-8 pt-6 border-t border-slate-700/50 space-y-4">
               <div className="bg-slate-900/40 rounded-xl p-4">
-                <div className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-2">Technical Specs</div>
+                <div className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-3">System Health</div>
                 <div className="space-y-2">
                   <div className="flex justify-between items-center text-[10px]">
-                    <span className="text-slate-500">ENGINE</span>
-                    <span className="text-slate-300">GEMINI FLASH 2.5</span>
+                    <span className="text-slate-500 uppercase">API Context</span>
+                    <span className={`font-bold tracking-tighter flex items-center gap-1 ${apiReady ? 'text-emerald-400' : 'text-orange-400'}`}>
+                      <div className={`w-1 h-1 rounded-full ${apiReady ? 'bg-emerald-400' : 'bg-orange-400'}`} />
+                      {apiReady ? 'CONNECTED' : 'KEY MISSING'}
+                    </span>
                   </div>
                   <div className="flex justify-between items-center text-[10px]">
-                    <span className="text-slate-500">SAMPLE RATE</span>
+                    <span className="text-slate-500 uppercase">Latency</span>
+                    <span className="text-emerald-400 font-bold tracking-tighter">OPTIMAL</span>
+                  </div>
+                  <div className="flex justify-between items-center text-[10px]">
+                    <span className="text-slate-500 uppercase">Sample Rate</span>
                     <span className="text-slate-300">24KHZ</span>
-                  </div>
-                  <div className="flex justify-between items-center text-[10px]">
-                    <span className="text-slate-500">LATENCY</span>
-                    <span className="text-emerald-400 font-bold tracking-tighter">&lt; 300MS</span>
                   </div>
                 </div>
               </div>
@@ -278,9 +306,9 @@ export default function App() {
         </aside>
       </main>
 
-      <footer className="mt-20 pb-8 text-center">
-        <div className="text-[10px] font-bold text-slate-700 uppercase tracking-[0.4em]">
-          &copy; {new Date().getFullYear()} MRIVG &bull; Powered by Google GenAI
+      <footer className="mt-20 pb-8 text-center opacity-50">
+        <div className="text-[10px] font-bold text-slate-600 uppercase tracking-[0.4em]">
+          &copy; {new Date().getFullYear()} MRIVG &bull; Production Optimized for Vercel
         </div>
       </footer>
     </div>

@@ -3,8 +3,18 @@ import { GoogleGenAI } from "@google/genai";
 import { VoiceName } from '../types';
 
 export class GeminiTTSService {
+  private getApiKey(): string {
+    const key = process.env.API_KEY;
+    if (!key || key === 'undefined') {
+      throw new Error("API Key is missing. Please configure the API_KEY environment variable in your deployment settings.");
+    }
+    return key;
+  }
+
   async generateSpeech(text: string, voice: VoiceName): Promise<string> {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+    const apiKey = this.getApiKey();
+    const ai = new GoogleGenAI({ apiKey });
+    
     try {
       const response = await ai.models.generateContent({
         model: "gemini-2.5-flash-preview-tts",
@@ -20,14 +30,31 @@ export class GeminiTTSService {
       });
 
       const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+      
       if (!base64Audio) {
-        const textError = response.candidates?.[0]?.content?.parts?.[0]?.text;
-        throw new Error(textError || "No audio data received. Please check your API key and input.");
+        // Handle specific safety or blocked content responses
+        const safetyRatings = response.candidates?.[0]?.safetyRatings;
+        const isBlocked = safetyRatings?.some(r => r.probability === 'HIGH' || r.probability === 'MEDIUM');
+        
+        if (isBlocked) {
+          throw new Error("Content was flagged by safety filters. Please try modifying your text.");
+        }
+        
+        throw new Error("The model failed to generate audio. This might be due to a temporary service interruption.");
       }
+      
       return base64Audio;
     } catch (error: any) {
       console.error("Gemini TTS Error:", error);
-      throw new Error(error.message || "Failed to communicate with the Gemini API.");
+      
+      // Categorize common API errors
+      if (error.message?.includes('429')) {
+        throw new Error("Rate limit exceeded. Please wait a moment before trying again.");
+      } else if (error.message?.includes('401') || error.message?.includes('403')) {
+        throw new Error("Invalid API Key. Please verify your credentials in the environment settings.");
+      }
+      
+      throw new Error(error.message || "An unexpected error occurred during synthesis.");
     }
   }
 }
@@ -35,13 +62,17 @@ export class GeminiTTSService {
 export const ttsService = new GeminiTTSService();
 
 export function decode(base64: string) {
-  const binaryString = atob(base64);
-  const len = binaryString.length;
-  const bytes = new Uint8Array(len);
-  for (let i = 0; i < len; i++) {
-    bytes[i] = binaryString.charCodeAt(i);
+  try {
+    const binaryString = atob(base64);
+    const len = binaryString.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+    return bytes;
+  } catch (e) {
+    throw new Error("Failed to decode audio data.");
   }
-  return bytes;
 }
 
 export async function decodeAudioData(
