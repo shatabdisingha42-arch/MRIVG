@@ -3,7 +3,6 @@ import { VoiceName } from '../types';
 
 export class GeminiTTSService {
   async generateSpeech(text: string, voice: VoiceName): Promise<string> {
-    // Re-instantiate to ensure we use the freshest API key available in the session
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     
     try {
@@ -11,11 +10,10 @@ export class GeminiTTSService {
         model: "gemini-2.5-flash-preview-tts",
         contents: [{ 
           parts: [{ 
-            text: `Say: ${text}` 
+            text: `TTS: ${text.trim()}` 
           }] 
         }],
         config: {
-          // Explicitly request ONLY audio to prevent the model from returning mixed modalities which causes errors
           responseModalities: [Modality.AUDIO],
           speechConfig: {
             voiceConfig: {
@@ -25,44 +23,36 @@ export class GeminiTTSService {
         },
       });
 
-      // Navigate candidates carefully to find inline audio data
       const audioPart = response.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
       const base64Audio = audioPart?.inlineData?.data;
       
       if (!base64Audio) {
-        console.warn("API returned response but no audio data was found in parts.");
-        
-        // Check for content filter blocks
-        const safetyRatings = response.candidates?.[0]?.safetyRatings;
-        const isBlocked = safetyRatings?.some(r => r.probability === 'HIGH' || r.probability === 'MEDIUM');
-        
-        if (isBlocked) {
-          throw new Error("Safety filters blocked this generation. Please try using more neutral language.");
+        // Handle Safety Blocks specifically
+        const safetyBlocked = response.candidates?.[0]?.finishReason === 'SAFETY';
+        if (safetyBlocked) {
+          throw new Error("Generation blocked: The content triggered safety filters. Please try neutral text.");
         }
-        
-        throw new Error("Neural synthesis failed to return valid audio. This can happen with complex text or server-side preview limits.");
+        throw new Error("Empty audio response: The model might be overloaded. Try a shorter sentence.");
       }
       
       return base64Audio;
     } catch (error: any) {
       console.error("Gemini TTS Engine Error:", error);
       
-      // Categorize common API errors to help the user resolve issues
+      // Detailed error breakdown for Free Tier vs Paid Tier
       if (error.message?.includes('500') || error.message?.includes('INTERNAL')) {
-        throw new Error("The synthesis engine encountered a temporary server error (500). Please try again with shorter text or wait a few seconds.");
-      }
-      
-      if (error.message?.includes('non-audio response') || error.message?.includes('not supported by the AudioOut model')) {
-        throw new Error("Model synthesis conflict: The engine tried to speak but failed. Try using simpler phrasing.");
+        throw new Error("Temporary Server Congestion (500). This is common on Free Tier keys during peak hours. Please try again in a few seconds.");
       }
       
       if (error.message?.includes('429')) {
-        throw new Error("Synthesis quota reached. Please wait a moment before trying again.");
-      } else if (error.message?.includes('401') || error.message?.includes('403') || error.message?.includes('Requested entity was not found')) {
-        throw new Error("API Authentication failure. Please re-select your valid API key via the Health panel.");
+        throw new Error("Rate limit exceeded. As a Free Tier user, please wait 60 seconds before your next generation.");
       }
       
-      throw new Error(error.message || "Synthesis engine encountered an unexpected error.");
+      if (error.message?.includes('401') || error.message?.includes('403') || error.message?.includes('Requested entity')) {
+        throw new Error("API Key Invalid: Ensure you have selected a valid key in the Health Panel.");
+      }
+      
+      throw new Error(error.message || "The neural engine encountered an unexpected error.");
     }
   }
 }
@@ -78,7 +68,7 @@ export function decode(base64: string) {
     }
     return bytes;
   } catch (e) {
-    throw new Error("Failed to decode synthesis data.");
+    throw new Error("Failed to decode audio data.");
   }
 }
 
@@ -88,7 +78,6 @@ export async function decodeAudioData(
   sampleRate: number,
   numChannels: number,
 ): Promise<AudioBuffer> {
-  // PCM data needs to be correctly aligned for Int16 conversion
   const byteLength = data.byteLength;
   const alignedLength = Math.floor(byteLength / 2) * 2;
   const int16Buffer = new Int16Array(data.buffer, data.byteOffset, alignedLength / 2);
@@ -98,7 +87,6 @@ export async function decodeAudioData(
   for (let channel = 0; channel < numChannels; channel++) {
     const channelData = audioBuffer.getChannelData(channel);
     for (let i = 0; i < frameCount; i++) {
-      // Scale 16-bit integer PCM to floating point [-1, 1]
       channelData[i] = int16Buffer[i * numChannels + channel] / 32768.0;
     }
   }
